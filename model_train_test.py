@@ -17,12 +17,15 @@ Functionalites for training and testing models.
 """
 
 # Adapted from zeiss_umbrella.resnet.train_model
-def train_model(model, dataloaders, dataset_sizes, criterion, optimizer, device, valid=True, ex=None,
+def train_model(model, dataloaders, dataset_sizes, criterion, optimizer, device, valid=True, ex=None, seed=None,
                 scheduler=None, fundus_dataset=None, adv_training_config=None, num_epochs=25, return_best=False):
     """
     Trains the given model,and returns it,  if return_best=True, also returns the best
     model state dict as a second return value
     """
+    if seed:
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed(seed)
     since = time.time()
 
     # best_model_wts = copy.deepcopy(model.state_dict())
@@ -74,54 +77,19 @@ def train_model(model, dataloaders, dataset_sizes, criterion, optimizer, device,
                     _, preds = torch.max(outputs, 1)
 
                     loss = criterion(outputs, labels)
-                    batch_acc = (preds == labels).type(torch.float).sum() / labels.shape[0]
                     # backward + optimize only if in training phase
+                    BATCH_ACC_TOL = adv_training_config.get('batch_acc_tol', 0.7)
+                    ADVERSARIAL_WEIGHT = adv_training_config.get('weight', 0.3)
+                    batch_acc = (preds == labels).type(torch.float).sum() / labels.shape[0]
                     if phase == 'train':
-                        if adv_training_config['type'] != 'baseline' and adv_training_config is not None:
-                            ADVERSARIAL_WEIGHT = adv_training_config.get('weight', 0.3)
-                            EPSILON_fgsm = adv_training_config.get('epsilon_fgsm', 1.0 / 255.0)
-                            ALPHA_fgsm = adv_training_config.get('alpha_fgsm', None)
-                            STEPS = adv_training_config.get('steps', None)
-                            EPSILON_dba = adv_training_config.get('epsilon_dba', 1.)
-                            DELTA_dba = adv_training_config.get('delta_dba', 0.1)
-                            N_STEP_MAX_dba = adv_training_config.get('n_step_max_dba', 250)
-                            E_STEP_MAX_dba = adv_training_config.get('e_step_max_dba', 20)
-                            D_STEP_MAX_dba = adv_training_config.get('d_step_max_dba', 10)
-                            UQSRT = adv_training_config.get('unqualified_sample_ratio_tol_dba', 0.4)
-                            DIFF_TOL_dba = adv_training_config.get('diff_tol_dba', 10)
-                            BATCH_ACC_TOL = adv_training_config.get('batch_acc_tol', 0.7)
-                            if adv_training_config['type'] == 'fgsm':
-                                adversarial_examples = fgsm_image(inputs, labels, EPSILON_fgsm, model, criterion,
-                                                                  device=device)
-                                adversarial_loss = criterion(model(adversarial_examples), labels)
-                            if adv_training_config['type'] == 'fgsm_k_image':
-                                adversarial_examples = fgsm_k_image(inputs, labels, model, criterion, device=device,
-                                                                    epsilon=EPSILON_fgsm, steps=STEPS, alpha=ALPHA_fgsm)
-                                adversarial_loss = criterion(model(adversarial_examples), labels)
-                            if adv_training_config['type'] == 'pgd':
-                                adversarial_examples = fgsm_k_image(inputs, labels, model, criterion, device=device,
-                                                                    epsilon=EPSILON_fgsm, steps=STEPS, rand=True)
-                                adversarial_loss = criterion(model(adversarial_examples), labels)
-                            if adv_training_config['type'] == 'boundary_attack':
-                                if batch_acc > BATCH_ACC_TOL:
-                                    num_attacks += 1
-                                    adversarial_examples, adversarial_labels = boundary_attack_image(model, device,
-                                                                                                     inputs, labels,
-                                                                                                     fundus_dataset=fundus_dataset,
-                                                                                                     epsilon=EPSILON_dba,
-                                                                                                     delta=DELTA_dba,
-                                                                                                     n_step_max=N_STEP_MAX_dba,
-                                                                                                     e_step_max=E_STEP_MAX_dba,
-                                                                                                     diff_tol=DIFF_TOL_dba,
-                                                                                                     d_step_max=D_STEP_MAX_dba,
-                                                                                                     unqualified_sample_ratio_tol=UQSRT)
-                                    adversarial_loss = criterion(model(adversarial_examples), adversarial_labels)
-                                else:
-                                    adversarial_loss = 0
-                                    ADVERSARIAL_WEIGHT = 0
-                            # like in goodfellow 2015 paper
-                            # print("adversarial loss: {}".format(adversarial_loss))
-                            loss = loss * (1 - ADVERSARIAL_WEIGHT) + ADVERSARIAL_WEIGHT * adversarial_loss
+                        if batch_acc > BATCH_ACC_TOL and adv_training_config['type'] != 'baseline' \
+                                and adv_training_config is not None:
+                            adversarial_samples, adversarial_labels = get_adversarial_samples(inputs, labels,
+                                                                                              adv_training_config)
+                            if adversarial_samples and adversarial_labels:
+                                num_attacks += 1
+                                adversarial_loss = criterion(model(adversarial_examples), adversarial_labels)
+                                loss = loss * (1 - ADVERSARIAL_WEIGHT) + ADVERSARIAL_WEIGHT * adversarial_loss
 
                             # clean up model gradients
                             model.zero_grad()
@@ -141,16 +109,10 @@ def train_model(model, dataloaders, dataset_sizes, criterion, optimizer, device,
             cks = cohen_kappa_score(ground_truth.cpu().tolist(), predictions.cpu().tolist(), weights='quadratic')
 
             # Output metrics using sacred ex
+            if ex:
+                record_training_info(ex, phase)
             if phase == 'train':
-                ex.log_scalar("train loss", epoch_loss)
-                ex.log_scalar("train accuracy", epoch_acc.item())
-                ex.log_scalar("train balanced accuracy", balanced_acc)
                 print("number of attack performed: {}".format(num_attacks))
-            elif phase == 'valid':
-                ex.log_scalar("valid loss", epoch_loss)
-                ex.log_scalar("valid accuracy", epoch_acc.item())
-                ex.log_scalar("valid balanced accuracy", balanced_acc)
-                ex.log_scalar("valid cohen square kappa", cks)
             print('{} Loss: {:.4f} Acc: {:.4f} Balanced Acc: {:.4f} cohen kappa score: {}'
                   .format(phase, epoch_loss, epoch_acc, balanced_acc, cks))
             # deep copy the model
@@ -168,9 +130,61 @@ def train_model(model, dataloaders, dataset_sizes, criterion, optimizer, device,
     # load best model weights
     # model.load_state_dict(best_model_wts)
     if return_best:
-        return model, best_model_wts
+        return model, best_model_wts, optimizer
     else:
-        return model
+        return model, optimizer
+
+
+def record_training_info(ex, phase):
+    if phase == 'train':
+        ex.log_scalar("train loss", epoch_loss)
+        ex.log_scalar("train accuracy", epoch_acc.item())
+        ex.log_scalar("train balanced accuracy", balanced_acc)
+    elif phase == 'valid':
+        ex.log_scalar("valid loss", epoch_loss)
+        ex.log_scalar("valid accuracy", epoch_acc.item())
+        ex.log_scalar("valid balanced accuracy", balanced_acc)
+        ex.log_scalar("valid cohen square kappa", cks)
+
+
+def get_adversarial_samples(inputs, labels, adv_training_config):
+    EPSILON_fgsm = adv_training_config.get('epsilon_fgsm', 1.0 / 255.0)
+    ALPHA_fgsm = adv_training_config.get('alpha_fgsm', None)
+    STEPS = adv_training_config.get('steps', None)
+    EPSILON_dba = adv_training_config.get('epsilon_dba', 1.)
+    DELTA_dba = adv_training_config.get('delta_dba', 0.1)
+    N_STEP_MAX_dba = adv_training_config.get('n_step_max_dba', 250)
+    E_STEP_MAX_dba = adv_training_config.get('e_step_max_dba', 20)
+    D_STEP_MAX_dba = adv_training_config.get('d_step_max_dba', 10)
+    UQSRT = adv_training_config.get('unqualified_sample_ratio_tol_dba', 0.4)
+    DIFF_TOL_dba = adv_training_config.get('diff_tol_dba', 10)
+    if adv_training_config['type'] == 'fgsm':
+        adversarial_samples = fgsm_image(inputs, labels, EPSILON_fgsm, model, criterion,
+                                         device=device)
+        adversarial_labels = labels.clone()
+    elif adv_training_config['type'] == 'fgsm_k_image':
+        adversarial_samples = fgsm_k_image(inputs, labels, model, criterion, device=device,
+                                           epsilon=EPSILON_fgsm, steps=STEPS, alpha=ALPHA_fgsm)
+        adversarial_labels = labels.clone()
+    elif adv_training_config['type'] == 'pgd':
+        adversarial_samples = fgsm_k_image(inputs, labels, model, criterion, device=device,
+                                           epsilon=EPSILON_fgsm, steps=STEPS, rand=True)
+        adversarial_labels = labels.clone()
+    elif adv_training_config['type'] == 'boundary_attack':
+        adversarial_samples, adversarial_labels = boundary_attack_image(model, device,
+                                                                        inputs, labels,
+                                                                        seed=seed,
+                                                                        fundus_dataset=fundus_dataset,
+                                                                        epsilon=EPSILON_dba,
+                                                                        delta=DELTA_dba,
+                                                                        n_step_max=N_STEP_MAX_dba,
+                                                                        e_step_max=E_STEP_MAX_dba,
+                                                                        diff_tol=DIFF_TOL_dba,
+                                                                        d_step_max=D_STEP_MAX_dba,
+                                                                        unqualified_sample_ratio_tol=UQSRT)
+    else:
+        adversarial_samples, adversarial_labels = None, None
+    return adversarial_samples, adversarial_labels
 
 
 def find_lr(model, optimizer, criterion, trn_loader, device, init_value=1e-8, final_value=10., beta=0.98):
