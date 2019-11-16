@@ -87,17 +87,7 @@ def run(_run: sacred.run.Run, modelname, baseline, preprocessing, device, optim_
                                                                                train_len=train_len, valid_len=valid_len)
     f = data.FundusDataset(root_dir=root_dir, csv_name='trainLabels.csv', transform_dic=preprocessing)
 
-    # Freezing the layers to enable fine-tuning only
-    # for param in model.parameters():
-    #     param.requires_grad = False
-    # model = torchvision.models.inception_v3(pretrained=True)
-    # # Handle the auxilary net
-    # num_ftrs = model.AuxLogits.fc.in_features
-    # model.AuxLogits.fc = nn.Linear(num_ftrs, 5)
     model = get_baseline(baseline, pretrain=True)
-    # Handle the primary net
-    num_ftrs = model.fc.in_features
-    model.fc = nn.Linear(num_ftrs, 5)
     print(model.__class__.__name__)
     model = model.to(device)
 
