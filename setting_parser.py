@@ -3,20 +3,48 @@ import torch.optim as optim
 import torch.nn as nn
 import torch
 from .train import FocalLoss_SM
+from torchvision.models import inception_v3
+from efficientnet_pytorch import EfficientNet
 
 
-def get_baseline(baseline_name, pretrain=False, progress=True):
+def get_baseline(baseline_name, num_classes=5, pretrain=False, progress=True,
+                 fine_tune=False, weights_dir=None):
     """Parse the input string given in the expriment script and return the corresponding model"""
     if baseline_name == 'resnet18':
-        return resnet18(pretrain, progress)
+        model = resnet18(pretrain, progress)
     elif baseline_name == 'resnet34':
-        return resnet34(pretrain, progress)
+        model = resnet34(pretrain, progress)
     elif baseline_name == 'resnet50':
-        return resnet50(pretrain, progress)
+        model = resnet50(pretrain, progress)
     elif baseline_name == 'resnet101':
-        return resnet101(pretrain, progress)
+        model = resnet101(pretrain, progress)
     elif baseline_name == 'resnet152':
-        return resnet152(pretrain, progress)
+        model = resnet152(pretrain, progress)
+    elif baseline_name == 'inceptionv3':
+        model = inception_v3(pretrain, progress)
+    elif baseline_name[:-2] == 'efficientnet':
+        version = baseline_name[-1]
+        model = EfficientNet.from_pretrained('efficientnet-b'+version, num_classes=num_classes)
+    else:
+        raise ValueError('Net not supported')
+    if fine_tune:
+        for param in model.parameters():
+            param.requires_grad = False
+    if model.__class__.__name__ != 'EfficientNet':
+        if model.__class__.__name__ == 'Inception3':
+            num_ftrs = model.AuxLogits.fc.in_features
+            model.AuxLogits.fc = nn.Linear(num_ftrs, num_classes)
+        num_ftrs = model.fc.in_features
+        model.fc = nn.Linear(num_ftrs, num_classes)
+    if weights_dir:
+        model.load_state_dict(torch.load(weights_dir))
+    # Output model information
+    print(model.__class__.__name__)
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    total_params = sum(p.numel() for p in model.parameters())
+    print('total parameters: ', total_params)
+    print('trainable parameters: ', trainable_params)
+    return model
 
 
 def get_optimizer(optim_setting, model_param):
