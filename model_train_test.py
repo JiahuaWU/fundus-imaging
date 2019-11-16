@@ -110,7 +110,7 @@ def train_model(model, dataloaders, dataset_sizes, criterion, optimizer, device,
 
             # Output metrics using sacred ex
             if ex:
-                record_training_info(ex, phase)
+                record_training_info(ex, phase, epoch_loss, epoch_acc, balanced_acc, cks)
             if phase == 'train':
                 print("number of attack performed: {}".format(num_attacks))
             print('{} Loss: {:.4f} Acc: {:.4f} Balanced Acc: {:.4f} cohen kappa score: {}'
@@ -135,7 +135,7 @@ def train_model(model, dataloaders, dataset_sizes, criterion, optimizer, device,
         return model, optimizer
 
 
-def record_training_info(ex, phase):
+def record_training_info(ex, phase, epoch_loss, epoch_acc, balanced_acc, cks):
     if phase == 'train':
         ex.log_scalar("train loss", epoch_loss)
         ex.log_scalar("train accuracy", epoch_acc.item())
