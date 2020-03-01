@@ -1,0 +1,125 @@
+\documentclass{article}
+
+
+\usepackage{arxiv}
+% uncomment to change preprint headers
+%\renewcommand{\WIP}{Bananas are yummy}
+\usepackage{lipsum}% Can be removed after putting your text content
+
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage[english]{babel}
+
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+%\usepackage{bmm} % for \mathbbm{1} etc
+\usepackage{mathtools} % for rcases
+\usepackage{amssymb}
+\usepackage{varioref}
+\usepackage{hyperref}
+\usepackage{cleveref}
+
+\usepackage{xcolor}
+
+\usepackage[autostyle]{csquotes}
+\usepackage[acronym]{glossaries}
+
+\usepackage{subfiles}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{tabularx}
+
+\title{Robust training and interpretability for Fundus imaging}
+
+%\date{Jan 9, 1985}	% Here you can change the date presented in the paper title
+%\date{} 					% Or removing it
+
+\author{
+Jiahua Wu
+    % Igor Krawczuk\thanks{\url{https://krawczuk.eu}}\\
+    % LIONS/LSM @ EPFL
+%  David S.~Hippocampus\thanks{Use footnote for providing further
+%    information about author (webpage, alternative
+%    address)---\emph{not} for acknowledging funding agencies.} \\
+%  Department of Computer Science\\
+%  Cranberry-Lemon University\\
+%  Pittsburgh, PA 15213 \\
+%  \texttt{hippo@cs.cranberry-lemon.edu} \\
+%  %% examples of more authors
+%   \And
+% Elias D.~Striatum \\
+%  Department of Electrical Engineering\\
+%  Mount-Sheikh University\\
+%  Santa Narimana, Levand \\
+%  \texttt{stariate@ee.mount-sheikh.edu} \\
+  %% \AND
+  %% Coauthor \\
+  %% Affiliation \\
+  %% Address \\
+  %% \texttt{email} \\
+  %% \And
+  %% Coauthor \\
+  %% Affiliation \\
+  %% Address \\
+  %% \texttt{email} \\
+  %% \And
+  %% Coauthor \\
+  %% Affiliation \\
+  %% Address \\
+  %% \texttt{email} \\
+}
+
+\usepackage[backend=biber,
+style=alphabetic,
+citestyle=alphabetic,
+sorting=none]{biblatex}
+%
+% \usepackage[backend=biber,style=alphabetic,sorting=none]{biblatex}
+ \addbibresource{main.bib}
+
+\newtheorem{claim}{Claim}
+\newtheorem{prop}{Proposition}
+\newtheorem{caveat}{Caveat}[claim]
+
+\newtheorem{definition}{Definition}
+\usepackage{todonotes}
+%\newcommand{\todo}[1]{ \textcolor{red}{#1}}
+% risk and adversarial risk
+\DeclareMathOperator{\Op}{Op}
+
+\makeglossaries
+%\addbibresource{main.bib}
+\begin{document}
+\maketitle
+% \listoftodos
+% model training (ways to deal with imbalanced dataset and their effects)
+
+\begin{abstract}
+Machine learning (ML) has seen its growing application in medicine whereas its lack of robustness and interpretability halts the field from completely accepting it. To address this problem, we investigate the possibility of adversarial training as an effective way to enhance these two properties. Specifically, the experiments are conducted on a fundus imaging dataset dedicated for diabetic retinopathy detection to examine the practicability of the proposed method regarding on image-based diagnosis. 
+\end{abstract}
+
+
+% keywords can be removed
+%\keywords{First keyword \and Second keyword \and More}
+
+
+\subfile{sections/introduction}
+\newpage
+\subfile{sections/experiments}
+\newpage
+\subfile{sections/conclusion}
+%%% Remove comment to use the external .bib file (using bibtex).
+\newpage
+\printbibliography
+\printglossaries
+
+
+
+
+\end{document}

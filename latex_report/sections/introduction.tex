@@ -1,0 +1,22 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+\section{Introduction}
+\label{sec:introduction}
+% \subsection{Formal problem statement}
+\label{subsec:formal_statement}
+
+
+% \begin{align}
+%     \min_{\theta} L(f(x,\theta),y)\\
+%     f:(x,\theta) \rightarrow \hat{y}
+% \end{align}
+ML has been creating a paradigm shift in medicine in recent years, from basic research (drug discovery and development) to clinical applications(diagnosis and prognosis of diseases such as diabetic retinopathy)\cite{noauthor_ascent_2019}. However, as revealed in \cite{adv1}, \cite{adv2}, the ML models are vulnerable to adversarial attacks, where a human-imperceptible manipulation in the input can result in a different predictions or in medical terms a misdiagnosis, which could be utilized for fraudulent interests. This was recently demonstrated by a group of researchers who showed that a carefully calculated perturbation on an image of a benign skin mole that is imperceptible to the human eye can be misclassified as a malignant mole, with 100\% confidence \cite{finlayson_adversarial_2019}. Additionally, the lack of interpretability is another obstacle that prevent ML from being fully trusted. Due to the black-box nature of decision-making process of the deep neural networks, the diagnosis given by the models are not always based on features used by medical professionals. (pathological tumors, inflamed tissues, etc.), making the decision process incomprehensible to humans.
+
+Fortunately, literature on adversarial attacks \cite{kurakin_adversarial_2016}, \cite{fgsm}, \cite{brendel_decision-based_2017}, \cite{madry_towards_2017} shows that (restricted to their choice of models in experiments) some widely used deep neural networks can be rendered resistant to the attacks if they are trained on corresponding adversarial examples. Particularly, in \cite{madry_towards_2017}, Madry et al. claim the projected gradient (PGD) method with random starting point to be the strongest attack utilizing the local first order information (gradients) about the network. In \cite{brendel_decision-based_2017}, Brendel et al. propose a decision boundary attack (DBA) method that can generate effective adversarial examples solely based on the final decision of the model. They are respectively representatives of white-box methods where we can manipulate the model to calculate gradients and black-box methods where we only have access to the output of the model. 
+
+Recently, researchers have demonstrated that the existence of adversarial examples results from the fact that the neural network makes use of some "non robust features" (subtle signals or patterns present in the inputs that are meaningless to humans) for classification \cite{ilyas_adversarial_2019}. Inspired by this observation, we suppose that through training on adversarial examples, the use of such non robust features will be penalized and the attention of the model should be shifted to the robust features that are equally utilized by humans, which makes the model more interpretable. We wish to verify this hypothesis by training some popular networks for image classification on adversarial examples and employ saliency map methods to visualize the importance the network attaches to each pixel. 
+
+
+
+% Often, the prediction task will exhibit skew in the different categories of interest, termed calss imbalance. For example, if the prevalence of a disease in the population is 0.1\%, on average only one example will be present for every 1000 data points collected. The severe deficit in the number of minority class examples can limit model development and hinder accurate evaluation by enlarging the confidence intervals. Ensuring that the minority class is well-represented is also important because of the diversity of data that will be seen in real-world use, for example based on patient demographics and disease subtype. Although there are techniques to minimize the effect of class imbalance for training ML models, a better solution may be to augment the dataset with more examples of the minority class.
+\end{document}

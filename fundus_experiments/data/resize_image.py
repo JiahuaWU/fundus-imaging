@@ -4,10 +4,6 @@ import pandas as pd
 import cv2
 import numpy
 
-"""
-Resize and preprocessed images according to Kaggle Diabetic Retinopathy Competition Report of Ben Graham.
-"""
-
 
 def scaleRadius(img, scale):
     x = img[int(img.shape[0] / 2), :, :].sum(1)

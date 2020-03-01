@@ -1,9 +1,7 @@
 import torch
 import numpy as np
+from torchvision import transforms
 
-"""
-Pytorch batch implementation of fgsm attack, PGD attack and decision boundary attack.
-"""
 
 # Adapted from zeiss_umbrella.adversarial
 # FGSM attack code from  https://pytorch.org/tutorials/beginner/fgsm_tutorial.html
@@ -91,7 +89,13 @@ def fgsm_k_image(data, target, model, criterion, device,
         return perturbed_image.detach()
 
 
-def fgsm_image(data, target, epsilon, model, criterion, device, skip_wrong=False, **kwargs):
+def pgd(data, target, model, criterion, device,
+        epsilon=1.0 / 255.0, alpha=None, steps=None, return_path=False):
+    return fgsm_k_image(data, target, model, criterion, device,
+                        epsilon=epsilon, alpha=alpha, steps=steps, return_path=return_path, rand=True)
+
+
+def fgsm_image(data, target, model, criterion, device, epsilon, skip_wrong=False, **kwargs):
     # Send the data and label to the device
     data, target = data.to(device), target.to(device)
 
@@ -129,7 +133,7 @@ def fgsm_image(data, target, epsilon, model, criterion, device, skip_wrong=False
         return perturbed_data
 
 
-"""----------------------------------------Boundary attack----------------------------------------------"""
+# Boundary attack
 def orthogonal_perturbation(deltas, prev_samples, target_samples, device):
     """
     Calculate the orthogonal move
@@ -159,9 +163,13 @@ def orthogonal_perturbation(deltas, prev_samples, target_samples, device):
     # Projection onto diff
     proj = inner_prods.unsqueeze(-1).unsqueeze(-1) * diff
     perturb -= proj
-    overflow = (prev_samples + perturb) - torch.ones_like(perturb)
+    t = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225])
+    ones_normalized = t(torch.ones_like(perturb)[0]).repeat(perturb.shape[0], 1, 1, 1)
+    zeros_normalized = t(torch.zeros_like(perturb)[0]).repeat(perturb.shape[0], 1, 1, 1)
+    overflow = (prev_samples + perturb) - ones_normalized
     perturb -= overflow * (overflow > 0).type(torch.float32)
-    underflow = (prev_samples + perturb) - torch.zeros_like(perturb)
+    underflow = (prev_samples + perturb) - zeros_normalized
     perturb -= underflow * (underflow < 0).type(torch.float32)
     return perturb.to(device)
 
@@ -245,6 +253,19 @@ def generate_target_samples(data, labels, fundus_dataset=None, target_indices=(4
         return target_samples, target_labels
 
 
+def generate_initial_samples(data, labels, model, device, max_iter=100, epsilon=3.0 / 255.0):
+    data, labels = data.to(device), labels.to(device)
+    init_samples = data.detach().clone()
+    n_iter = 0
+    correct = torch.max(model(init_samples), 1)[1] == labels
+    while correct.any() and n_iter < max_iter:
+        init_samples = torch.rand_like(init_samples)
+        correct = torch.max(model(init_samples), 1)[1] == labels
+        n_iter += 1
+    print("generate {} initial samples".format(correct.bitwise_not().type(torch.int).sum()))
+    return init_samples[correct.bitwise_not()], correct.bitwise_not()
+
+
 def move_to_boundary(model, epsilons, adversarial_samples, target_samples, init_preds, d_step_max, n_calls, device):
     """
     Move first step to the boundary: first coincide with the target sample and gradually reduce step size
@@ -276,7 +297,7 @@ def move_to_boundary(model, epsilons, adversarial_samples, target_samples, init_
 
         # Update adversarial examples and step sizes
         adversarial_samples[correct_indices] = trial_samples[correct]
-        epsilons[wrong_indices] *= 0.9
+        epsilons[wrong_indices] *= 0.8
 
         # Update trial indices
         trial_indices = trial_indices[wrong]
@@ -324,8 +345,11 @@ def move_and_tuning(model, adversarial_samples, target_samples, init_preds, n_ca
 
         # predictions of size (batch * num_trial)
         trial_preds = torch.max(trial_outputs, 1)[1]
+        # print("trial predictions:{}".format(trial_preds))
+        # print("initial predictions:{}".format(init_preds))
 
         d_scores = torch.mean((trial_preds.view(num_trial, -1) == init_preds[trial_indices]).type(torch.float32), dim=0)
+        # print("d_scores: {}".format(d_scores))
         non_zero = d_scores > 0.0
         case1 = non_zero * (d_scores < reduce_threshold)
         case2 = d_scores > increase_threshold
@@ -341,6 +365,7 @@ def move_and_tuning(model, adversarial_samples, target_samples, init_preds, n_ca
         parameter[case1_indices] *= decrease
         parameter[case2_indices] /= increase
         parameter[zero_indices] *= decrease
+        # print("Parameter: {}".format(parameter))
 
         # Take one of the valid orthogonal perturbation
         non_zero_row_indices = []
@@ -368,8 +393,9 @@ def move_and_tuning(model, adversarial_samples, target_samples, init_preds, n_ca
 
 
 def boundary_attack_image(model, device,
-                          data, labels, skip_zero=True, fundus_dataset=None, target_indices=(4, 5, 300, 6),
-                          epsilon=1., delta=0.1,
+                          data, labels, untarget=False, skip_zero=False, fundus_dataset=None,
+                          target_indices=(4, 5, 300, 6),
+                          epsilon=1., delta=0.1, seed=None,
                           n_step_max=250, e_step_max=20, diff_tol=10, d_step_max=20, unqualified_sample_ratio_tol=0.2):
     """
     Batch implementation of decision boundary attack which allows to produce adversarial examples from input data.
@@ -393,13 +419,30 @@ def boundary_attack_image(model, device,
     :param device: cpu or cuda
     :return: adversarial examples along with the corresponding target labels
     """
+    if seed:
+        torch.cuda.manual_seed_all(seed)
+        torch.manual_seed(seed)
     # Load the data, labels to device
     data, labels = data.to(device), labels.to(device)
 
-    # Generate target samples from data
-    target_samples, target_labels = generate_target_samples(data.detach(), labels.detach(),
-                                                            fundus_dataset=fundus_dataset,
-                                                            target_indices=target_indices, device=device)
+    if untarget:
+        init_samples, success = generate_initial_samples(data.detach(), labels.detach(), model, device)
+        target_samples, target_labels = data.detach()[success], labels.detach()[success]
+        # Forward pass the data through the model
+        init_outputs = model(data[success])
+        init_preds = torch.max(init_outputs, 1)[1]  # get the index of the max log-probability
+        correctly_classified = init_preds == labels[success]
+
+    else:
+        init_samples = data
+        # Generate target samples from data
+        target_samples, target_labels = generate_target_samples(data.detach(), labels.detach(),
+                                                                fundus_dataset=fundus_dataset,
+                                                                target_indices=target_indices, device=device)
+        # Forward pass the data through the model
+        init_outputs = model(data)
+        init_preds = torch.max(init_outputs, 1)[1]  # get the index of the max log-probability
+        correctly_classified = init_preds == labels
 
     # Load target_samples, target_labels to device
     target_samples, target_labels = target_samples.to(device), target_labels.to(device)
@@ -408,14 +451,9 @@ def boundary_attack_image(model, device,
     batch_size = data.detach().shape[0]
 
     with torch.no_grad():
-        # Forward pass the data through the model
-        init_outputs = model(data)
-        init_preds = torch.max(init_outputs, 1)[1]  # get the index of the max log-probability
-        target_outputs = model(target_samples)
 
         # If the classifier cannot classify correctly the initial training data,
         # no need to generate adversarial examples
-        correctly_classified = init_preds == labels
         qualified_candidates = correctly_classified
 
         # If skip zero, we skip images with label 0
@@ -425,10 +463,12 @@ def boundary_attack_image(model, device,
         num_qualified_candidates = qualified_candidates.type(torch.int).sum()
         target_samples = target_samples[qualified_candidates]
         target_labels = target_labels[qualified_candidates]
-        adversarial_samples = data[qualified_candidates].clone().to(device)
+        adversarial_samples = init_samples[qualified_candidates].clone().to(device)
         init_preds = init_preds[qualified_candidates]
         epsilons = (torch.ones(num_qualified_candidates) * epsilon).to(device)
         deltas = (torch.ones(num_qualified_candidates) * delta).to(device)
+        print("Initial Diff :")
+        print(get_diff(adversarial_samples, target_samples, device))
 
         if adversarial_samples.shape[0] == 0:
             return data[correctly_classified.bitwise_not()].clone().to(device), \
@@ -439,6 +479,8 @@ def boundary_attack_image(model, device,
         epsilons, adversarial_samples, n_calls = move_to_boundary(model, epsilons, adversarial_samples, target_samples,
                                                                   init_preds,
                                                                   d_step_max, n_calls, device)
+        print("After first move:")
+        print(get_diff(adversarial_samples, target_samples, device))
 
         while True:
             print("Step #{}...".format(n_steps))
@@ -446,15 +488,19 @@ def boundary_attack_image(model, device,
                                                                    init_preds, n_calls, device,
                                                                    move_type='orthogonal', parameter=deltas,
                                                                    step_max=d_step_max, num_trial=20,
-                                                                   reduce_threshold=0.2, increase_threshold=0.9,
+                                                                   reduce_threshold=0.2, increase_threshold=0.8,
                                                                    increase=0.9, decrease=0.9)
-            print(deltas)
+            print("After orthgonal move:")
+            # print("deltas: {}".format(deltas))
+            print(get_diff(adversarial_samples, target_samples, device))
             epsilons, adversarial_samples, n_calls = move_and_tuning(model, adversarial_samples, target_samples,
                                                                      init_preds, n_calls, device,
                                                                      move_type='forward', parameter=epsilons,
-                                                                     step_max=e_step_max, num_trial=1,
-                                                                     reduce_threshold=0.2, increase_threshold=0.5,
+                                                                     step_max=e_step_max, num_trial=10,
+                                                                     reduce_threshold=0.2, increase_threshold=0.8,
                                                                      increase=0.5, decrease=0.5)
+            print("After forward move:")
+            print(get_diff(adversarial_samples, target_samples, device))
 
             n_steps += 1
             diff = get_diff(adversarial_samples, target_samples, device)
@@ -463,7 +509,7 @@ def boundary_attack_image(model, device,
             print("Mean Squared Error: {}".format(torch.mean(diff).item()))
             unqualified_samples_num = (torch.max(diff, dim=1).values > diff_tol).type(torch.int).sum()
             if diff.mean().item() <= diff_tol or n_steps > n_step_max \
-                    or unqualified_samples_num < unqualified_sample_ratio_tol * batch_size:
+                    or unqualified_samples_num < unqualified_sample_ratio_tol * num_qualified_candidates:
                 break
 
         # We only return the valid samples
@@ -471,7 +517,8 @@ def boundary_attack_image(model, device,
         target_labels = target_labels[(torch.max(diff, dim=1).values < diff_tol)]
 
         # append wrongly classified samples for further training
-        adversarial_samples = torch.cat((adversarial_samples, data[correctly_classified.bitwise_not()].clone().to(device)))
+        adversarial_samples = torch.cat(
+            (adversarial_samples, data[correctly_classified.bitwise_not()].clone().to(device)))
         target_labels = torch.cat((target_labels, labels[correctly_classified.bitwise_not()].clone().to(device)))
 
         print("Generate {} adversarial samples".format(len(adversarial_samples)))

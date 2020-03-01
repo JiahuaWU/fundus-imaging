@@ -1,0 +1,6 @@
+examples
+fundus
+runs
+*.ipynb
+*.pth
+*.tar.gz

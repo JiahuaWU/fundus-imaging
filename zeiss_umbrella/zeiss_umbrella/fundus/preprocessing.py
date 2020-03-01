@@ -1,17 +1,15 @@
 from torchvision import transforms
-import torch
-import cv2
 
-"""
-On-fly preprocessing
-"""
 
-def default_transform():
-    return transforms.Compose([transforms.ToPILImage(),
-                               transforms.ToTensor(),
+def normalize():
+    return transforms.Compose([transforms.ToTensor(),
                                transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                                     std=[0.229, 0.224, 0.225])]
                               )
+
+
+def default():
+    return transforms.Compose([transforms.ToTensor()])
 
 
 def augmented():
@@ -25,17 +23,3 @@ def augmented():
                                transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                                     std=[0.229, 0.224, 0.225])]
                               )
-
-
-def resize(size):
-    return transforms.Compose([transforms.ToPILImage(),
-                               transforms.Resize(size),
-                               transforms.ToTensor()])
-
-
-def center_crop(size):
-    return transforms.Compose([transforms.ToPILImage(),
-                               transforms.CenterCrop(size=size),
-                               # The dataset only considers the 32 most centered pixels
-                               transforms.ToTensor()
-                               ])
